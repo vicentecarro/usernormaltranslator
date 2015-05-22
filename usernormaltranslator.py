@@ -1,4 +1,4 @@
-#license GPL v2
+#license GPL v3
 #by Vicente Carro Fernandez - vicentecarro@gmail.com
 
 #v0.9.0
@@ -11,6 +11,9 @@
 #added support for Normals2Verteccolor
 #minor changes
 #v0.9.2
+#fixed implementation of Normals2VertexColor
+#added VertexColor2Normal 
+
 
 
 import bpy
@@ -124,6 +127,34 @@ class OP_vertexcolor2normals(bpy.types.Operator):
     
     def execute(self,context):
         print ("do stuff")
+        print ("vertex colors to normals")
+        ob = bpy.context.object
+        obdata = ob.data
+        
+        #mandatory stupid step, calculate normals split, in object mode
+        bpy.ops.object.mode_set(mode="OBJECT")        
+        obdata.calc_normals_split()
+        
+        unit = Vector((1,1,1))         
+        
+        #prepare a list for all the normals. One per "loop"(vertice-per-faace)    
+        normals = [Vector()]*len(obdata.loops)
+        
+        #loop all the loops (subvertices) in the mesh
+        for loop in obdata.loops:
+            #obdata.calc_normals_split()
+            vertexindex = loop.vertex_index
+            #if the vertex is selected, apply the normal from the color            
+            if obdata.vertices[vertexindex].select:            
+                print ("Vertex: %s"% vertexindex)                
+                
+                #ob.data.vertex_colors[0].data[loop.index].color = (loop.normal + unit) / float(2)
+                normals[loop.index] = (Vector(ob.data.vertex_colors[0].data[loop.index].color) * float(2.0)) - unit
+            else:
+                normals[loop.index] = loop.normal
+                
+        obdata.normals_split_custom_set(normals)                
+        bpy.ops.object.mode_set(mode="EDIT")   
         return {'FINISHED'}
 
 class OP_normal2vertexcolor(bpy.types.Operator):
@@ -138,20 +169,23 @@ class OP_normal2vertexcolor(bpy.types.Operator):
         
         #mandatory stupid step, calculate normals split, in object mode
         bpy.ops.object.mode_set(mode="OBJECT")        
-        obdata.calc_normals_split()  
+        obdata.calc_normals_split()
+        
+        unit = Vector((1,1,1))         
+        
         
         #loop all the loops (subvertices) in the mesh
         for loop in obdata.loops:
             #obdata.calc_normals_split()
             vertexindex = loop.vertex_index
-            #if the vertex is selected, normalize the normal            
+            #if the vertex is selected, colour the loop/subvertice
             if obdata.vertices[vertexindex].select:            
                 print ("Vertex: %s"% vertexindex)
                 #convert components into color
                 print ("   Vector %s"% loop.normal)
                 color = Color(loop.normal)
                 print ("   Color: %s"%color)
-                ob.data.vertex_colors[0].data[loop.index].color = loop.normal                
+                ob.data.vertex_colors[0].data[loop.index].color = (loop.normal + unit) / float(2)
         bpy.ops.object.mode_set(mode="EDIT")   
         
         return {'FINISHED'}
@@ -164,6 +198,20 @@ class OP_remake_normalize(bpy.types.Operator):
     def execute(self,context):
         print ("do stuff")
         return {'FINISHED'}
+    
+def get_linked_vertices(vertexindex):
+    """
+    Returns alist with the vertices linked with the given one
+    """
+    obdata= bpy.context.object.data
+    related_edges = [y for y in obdata.edges if vertexindex in y.vertices]
+    adjacent_vertices = [obdata.vertices[x.vertices[0]] for x in related_edges] + [obdata.vertices[x.vertices[1]] for x in related_edges]
+    adjacent_vertices = list(set(adjacent_vertices))
+    print ("adjacents vertices")
+    print (adjacent_vertices)
+    #dont return the given vertex
+    #adjacent_vertices.remove(vertexindex)
+    return adjacent_vertices
 
 class OP_smooth_normalize(bpy.types.Operator):
     """Smooth normals"""
@@ -171,7 +219,51 @@ class OP_smooth_normalize(bpy.types.Operator):
     bl_label = "Smooth"
     
     def execute(self,context):
-        print ("do stuff")
+        print ("do smooth")
+        
+        print ("vertex colors to normals")
+        ob = bpy.context.object
+        obdata = ob.data
+        
+        #mandatory stupid step, calculate normals split, in object mode
+        bpy.ops.object.mode_set(mode="OBJECT")        
+        obdata.calc_normals_split()
+        
+        #prepare a list for all the normals. One per "loop"(vertice-per-faace)    
+        normals = [Vector()]*len(obdata.loops)
+        smoothnormals = [Vector()]*len(obdata.loops)
+        
+        #loop all the loops (subvertices) in the mesh
+        for loop in obdata.loops:
+            #obdata.calc_normals_split()
+            vertexindex = loop.vertex_index
+            
+            #if the vertex is selected, apply the normal from the color            
+            if obdata.vertices[vertexindex].select:            
+                print ("Vertex: %s"% vertexindex)                
+                the_normal = Vector((0,0,0))
+                #get related vertices
+                linkverts = get_linked_vertices(vertexindex)
+                for vert in linkverts:
+                    if vert == vertexindex: 
+                        continue
+                    linkloopsnormals = [x.normal for x in obdata.loops if x.vertex_index == vert.index]
+                    print ("linkloops notmals")
+                    print (linkloopsnormals)
+                    prevnormal=linkloopsnormals[0]
+                    for lln in linkloopsnormals[1:]:
+                        prevnormal = prevnormal.slerp(lln,0.5)
+                        
+                        
+                        
+                
+                #ob.data.vertex_colors[0].data[loop.index].color = (loop.normal + unit) / float(2)
+                smoothnormals[loop.index] = resultvector
+            else:
+                smoothnormals[loop.index] = loop.normal
+                
+        obdata.normals_split_custom_set(normals)                
+        bpy.ops.object.mode_set(mode="EDIT")           
         return {'FINISHED'}
 
 class OP_invert_normalize(bpy.types.Operator):
